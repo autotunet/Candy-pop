@@ -9,7 +9,11 @@ data class MatchEvaluation(
     val scoreEarned: Int,
     val ingredientsCollected: Map<CandyColor, Int>,
     val jelliesCleared: Int,
-    val specialsTriggered: Set<SpecialCandyType>
+    val specialsTriggered: Set<SpecialCandyType>,
+    val stripedRowsCleared: List<Int> = emptyList(),
+    val stripedColsCleared: List<Int> = emptyList(),
+    val wrappedExplosionCenters: List<Position> = emptyList(),
+    val colorBombPositions: List<Position> = emptyList()
 )
 
 object GameEngine {

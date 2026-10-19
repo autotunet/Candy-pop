@@ -144,3 +144,11 @@ data class RainbowTentacle(
     val color: Color,
     val durationMs: Int = 500
 )
+
+data class PowerUpCreationEffect(
+    val id: Long,
+    val col: Int,
+    val row: Int,
+    val specialType: SpecialCandyType,
+    val color: Color
+)

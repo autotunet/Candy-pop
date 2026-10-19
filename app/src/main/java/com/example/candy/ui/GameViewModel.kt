@@ -59,6 +59,7 @@ data class GameUiState(
     val shockwaves: List<Shockwave> = emptyList(),
     val lasers: List<LaserBeam> = emptyList(),
     val rainbowTentacles: List<RainbowTentacle> = emptyList(),
+    val specialCreationsEffects: List<PowerUpCreationEffect> = emptyList(),
     val screenShakeIntensity: Float = 0f,
     val timeLeftSeconds: Int? = null,
     val isTimedOut: Boolean = false,
@@ -237,6 +238,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             shockwaves = emptyList(),
             lasers = emptyList(),
             rainbowTentacles = emptyList(),
+            specialCreationsEffects = emptyList(),
             floatingScores = emptyList(),
             screenShakeIntensity = 0f
         )
