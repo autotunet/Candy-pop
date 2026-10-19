@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -56,6 +57,12 @@ fun GamePlayScreen(
     val strings = Localization.getStrings(lang)
     val context = LocalContext.current
     val activity = context as? Activity
+    val view = LocalView.current
+
+    DisposableEffect(view) {
+        viewModel.attachView(view)
+        onDispose { }
+    }
 
     // Screen Shake dynamic juice
     val shakeOffset = remember { Animatable(0f) }
@@ -125,6 +132,12 @@ fun GamePlayScreen(
                 strings = strings
             )
 
+            // Visual Combo Meter UI Element
+            ComboMeter(
+                uiState = uiState,
+                strings = strings
+            )
+
             // Active Booster Prompt (if armed)
             uiState.activeBooster?.let { booster ->
                 ActiveBoosterPrompt(
@@ -190,6 +203,7 @@ fun GamePlayScreen(
             LevelWinDialog(
                 score = uiState.currentScore,
                 stars = uiState.starsEarned,
+                maxStreak = uiState.maxComboStreak,
                 levelNumber = uiState.currentLevel.levelNumber,
                 hasNextLevel = uiState.currentLevel.levelNumber < LevelsData.TOTAL_LEVELS,
                 strings = strings,
@@ -842,6 +856,7 @@ private fun BoosterButton(
 private fun LevelWinDialog(
     score: Int,
     stars: Int,
+    maxStreak: Int = 0,
     levelNumber: Int,
     hasNextLevel: Boolean,
     strings: com.example.candy.util.AppStrings,
@@ -921,6 +936,15 @@ private fun LevelWinDialog(
                             color = Color(0xFFE65100),
                             modifier = Modifier.padding(top = 4.dp)
                         )
+                        if (maxStreak > 1) {
+                            Text(
+                                text = "🔥 ${strings.maxStreak}: ${maxStreak}x",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = CandyOrange,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
                     }
                 }
 

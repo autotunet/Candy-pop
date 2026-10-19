@@ -9,10 +9,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.candy.ads.AdBannerView
 import com.example.candy.ads.AdManager
@@ -35,6 +37,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             val viewModel: GameViewModel = viewModel()
             val uiState by viewModel.uiState.collectAsState()
+            val view = LocalView.current
+
+            DisposableEffect(view) {
+                viewModel.attachView(view)
+                onDispose {
+                    viewModel.detachView()
+                }
+            }
 
             MyApplicationTheme(darkTheme = uiState.isDarkMode) {
                 Surface(

@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.Locale
 import kotlin.random.Random
 
 enum class GameScreen {
@@ -48,6 +49,11 @@ data class GameUiState(
     val activeBooster: BoosterType? = null,
     val hintPair: Pair<Position, Position>? = null,
     val comboText: String? = null,
+    val comboStreak: Int = 0,
+    val comboMultiplier: Float = 1.0f,
+    val maxComboStreak: Int = 0,
+    val comboMeterFill: Float = 0f,
+    val isComboActive: Boolean = false,
     val particles: List<Particle> = emptyList(),
     val floatingScores: List<FloatingScore> = emptyList(),
     val shockwaves: List<Shockwave> = emptyList(),
@@ -113,6 +119,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun attachView(view: android.view.View) {
+        soundManager.attachView(view)
+    }
+
+    fun detachView() {
+        soundManager.detachView()
+    }
+
     fun toggleDarkMode() {
         val enabled = !_uiState.value.isDarkMode
         soundManager.playClick()
@@ -138,6 +152,51 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private var timerJob: kotlinx.coroutines.Job? = null
+    private var comboDecayJob: kotlinx.coroutines.Job? = null
+    private var currentStreak: Int = 0
+
+    fun getMultiplierForStreak(streak: Int): Float {
+        return when {
+            streak <= 1 -> 1.0f
+            streak == 2 -> 1.5f
+            streak == 3 -> 2.0f
+            streak == 4 -> 2.5f
+            streak == 5 -> 3.0f
+            streak == 6 -> 3.5f
+            streak == 7 -> 4.0f
+            else -> 5.0f
+        }
+    }
+
+    private fun startComboDecayLoop() {
+        comboDecayJob?.cancel()
+        if (currentStreak <= 0) return
+        comboDecayJob = viewModelScope.launch {
+            val totalDurationMs = 4500L
+            val stepIntervalMs = 50L
+            val steps = (totalDurationMs / stepIntervalMs).toInt()
+            for (i in steps downTo 0) {
+                delay(stepIntervalMs)
+                val state = _uiState.value
+                if (state.currentScreen != GameScreen.PLAYING || state.isGameOver || state.isGameWon) {
+                    break
+                }
+                if (state.isProcessing || state.isPaused) {
+                    continue
+                }
+                val fill = i.toFloat() / steps
+                _uiState.value = _uiState.value.copy(comboMeterFill = fill)
+            }
+            currentStreak = 0
+            _uiState.value = _uiState.value.copy(
+                comboStreak = 0,
+                comboMultiplier = 1.0f,
+                comboMeterFill = 0f,
+                isComboActive = false,
+                comboText = null
+            )
+        }
+    }
 
     fun startLevel(levelNumber: Int, forceTimerMode: Boolean = false) {
         val level = LevelsData.getLevel(levelNumber)
@@ -146,6 +205,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val timeLimit = if (forceTimerMode) 60 else level.timeLimitSeconds
 
         timerJob?.cancel()
+        comboDecayJob?.cancel()
+        currentStreak = 0
         soundManager.playClick()
         _uiState.value = _uiState.value.copy(
             currentScreen = GameScreen.PLAYING,
@@ -163,6 +224,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             selectedPosition = null,
             activeBooster = null,
             hintPair = null,
+            comboStreak = 0,
+            comboMultiplier = 1.0f,
+            maxComboStreak = 0,
+            comboMeterFill = 0f,
+            isComboActive = false,
+            comboText = null,
             timeLeftSeconds = timeLimit,
             isTimedOut = false,
             elapsedTimeSeconds = 0,
@@ -298,15 +365,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (GameEngine.canSwap(pos1, pos2, state.board)) {
             executeValidSwap(pos1, pos2)
         } else {
-            // Invalid swap: sound + deselect
-            soundManager.playSwap()
+            // Invalid swap: tactile rejection + sound + deselect
+            soundManager.playSwap(isValid = false)
             _uiState.value = state.copy(selectedPosition = null)
         }
     }
 
     private fun executeValidSwap(pos1: Position, pos2: Position) {
         viewModelScope.launch {
-            soundManager.playSwap()
+            comboDecayJob?.cancel()
+            soundManager.playSwap(isValid = true)
             val state = _uiState.value
             val swappedBoard = GameEngine.simulateSwap(pos1, pos2, state.board)
             val newMoves = (state.movesLeft - 1).coerceAtLeast(0)
@@ -325,6 +393,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun executeColorBombSwap(pos1: Position, pos2: Position) {
         viewModelScope.launch {
+            comboDecayJob?.cancel()
+            currentStreak++
+            val mult = getMultiplierForStreak(currentStreak)
             val state = _uiState.value
             val bombPos = if (state.board[pos1.row][pos1.col].special == SpecialCandyType.COLOR_BOMB) pos1 else pos2
             val targetPos = if (bombPos == pos1) pos2 else pos1
@@ -334,7 +405,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = state.copy(
                 selectedPosition = null,
                 movesLeft = newMoves,
-                isProcessing = true
+                isProcessing = true,
+                comboStreak = currentStreak,
+                comboMultiplier = mult,
+                maxComboStreak = maxOf(state.maxComboStreak, currentStreak),
+                comboMeterFill = 1f,
+                isComboActive = true
             )
 
             val evaluation = GameEngine.handleColorBombSwap(bombPos, targetPos, state.board)
@@ -371,7 +447,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             )
 
             delay(320)
-            applyMatchEvaluation(evaluation, comboCount = 1)
+            applyMatchEvaluation(evaluation, streakCount = currentStreak)
 
             val refilledBoard = GameEngine.dropAndRefill(state.board, evaluation.matchedPositions, evaluation.specialCreations)
             _uiState.value = _uiState.value.copy(
@@ -397,20 +473,26 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 break
             }
 
+            comboDecayJob?.cancel()
+            currentStreak++
+            val currentMult = getMultiplierForStreak(currentStreak)
+            val newMax = maxOf(_uiState.value.maxComboStreak, currentStreak)
+            val fill = (currentStreak / 6f).coerceIn(0.25f, 1.0f)
+
             // Audio & Haptic feedback
             if (evaluation.specialsTriggered.isNotEmpty()) {
                 soundManager.playSpecialExplosion()
             } else {
-                soundManager.playMatch(combo)
+                soundManager.playMatch(currentStreak)
             }
             if (evaluation.specialCreations.isNotEmpty()) {
                 soundManager.playSpecialCreated()
             }
 
             // Show combo announcement with localized praise
-            if (combo >= 2) {
+            if (currentStreak >= 2) {
                 val strings = com.example.candy.util.Localization.getStrings(_uiState.value.language)
-                val praise = when (combo) {
+                val praise = when (currentStreak) {
                     2 -> strings.sweet
                     3 -> strings.tasty
                     4 -> strings.delicious
@@ -445,29 +527,35 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
             val firstPos = evaluation.matchedPositions.firstOrNull()
             val newScores = if (firstPos != null) {
-                val earned = (evaluation.scoreEarned * (1.0 + (combo - 1) * 0.5)).toInt()
+                val earned = (evaluation.scoreEarned * currentMult).toInt()
+                val multTag = if (currentMult > 1.0f) " (x${String.format(Locale.US, "%.1f", currentMult)})" else ""
                 listOf(
                     FloatingScore(
                         id = Random.nextLong(),
-                        text = "+$earned",
+                        text = "+$earned$multTag",
                         col = firstPos.col,
                         row = firstPos.row,
-                        color = GoldStar
+                        color = if (currentMult >= 2.0f) GoldStar else CandyYellow
                     )
                 )
             } else emptyList()
 
-            val shake = if (evaluation.specialsTriggered.isNotEmpty() || combo >= 2) (6f * combo.coerceAtMost(3)) else 0f
+            val shake = if (evaluation.specialsTriggered.isNotEmpty() || currentStreak >= 2) (6f * currentStreak.coerceAtMost(3)) else 0f
 
             _uiState.value = _uiState.value.copy(
                 shockwaves = newShockwaves,
                 lasers = newLasers,
                 floatingScores = newScores,
-                screenShakeIntensity = shake
+                screenShakeIntensity = shake,
+                comboStreak = currentStreak,
+                comboMultiplier = currentMult,
+                maxComboStreak = newMax,
+                comboMeterFill = fill,
+                isComboActive = true
             )
 
             spawnParticlesForPositions(evaluation.matchedPositions)
-            applyMatchEvaluation(evaluation, comboCount = combo)
+            applyMatchEvaluation(evaluation, streakCount = currentStreak)
 
             // Step 1: Animate Candy Removal (Popping, flash, scale down & shockwave ring)
             val clearingBoard = board.map { rowList ->
@@ -524,9 +612,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         checkGameCompletion()
     }
 
-    private fun applyMatchEvaluation(evaluation: MatchEvaluation, comboCount: Int) {
+    private fun applyMatchEvaluation(evaluation: MatchEvaluation, streakCount: Int) {
         val state = _uiState.value
-        val comboMultiplier = 1.0 + (comboCount - 1) * 0.5
+        val comboMultiplier = getMultiplierForStreak(streakCount)
         val earnedScore = (evaluation.scoreEarned * comboMultiplier).toInt()
         val newScore = state.currentScore + earnedScore
 
@@ -584,6 +672,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
         if (allGoalsMet) {
             // Victory!
+            comboDecayJob?.cancel()
             val finalStars = state.starsEarned.coerceAtLeast(1)
             soundManager.playWin()
             _uiState.value = state.copy(
@@ -595,6 +684,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             saveLevelProgress(level.levelNumber, finalStars, state.currentScore)
         } else if (state.movesLeft <= 0) {
             // Defeat!
+            comboDecayJob?.cancel()
             soundManager.playLose()
             _uiState.value = state.copy(
                 isGameOver = true,
@@ -604,6 +694,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             // Still in play
             _uiState.value = state.copy(isProcessing = false)
+            startComboDecayLoop()
         }
     }
 

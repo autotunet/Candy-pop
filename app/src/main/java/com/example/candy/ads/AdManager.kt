@@ -146,27 +146,34 @@ object AdManager {
         val ad = currentInterstitialAd
 
         if (ad != null && (now - lastAdShowTime) >= MIN_COOLDOWN_MS) {
-            ad.fullScreenContentCallback = object : FullScreenContentCallback() {
-                override fun onAdDismissedFullScreenContent() {
-                    Log.d(TAG, "Interstitial ad dismissed by user")
-                    currentInterstitialAd = null
-                    lastAdShowTime = System.currentTimeMillis()
-                    loadNextInterstitial(activity)
-                    onClosed()
-                }
+            try {
+                ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+                    override fun onAdDismissedFullScreenContent() {
+                        Log.d(TAG, "Interstitial ad dismissed by user")
+                        currentInterstitialAd = null
+                        lastAdShowTime = System.currentTimeMillis()
+                        loadNextInterstitial(activity)
+                        onClosed()
+                    }
 
-                override fun onAdFailedToShowFullScreenContent(adError: AdError) {
-                    Log.w(TAG, "Interstitial failed to show: ${adError.message}")
-                    currentInterstitialAd = null
-                    loadNextInterstitial(activity)
-                    onClosed()
-                }
+                    override fun onAdFailedToShowFullScreenContent(adError: AdError) {
+                        Log.w(TAG, "Interstitial failed to show: ${adError.message}")
+                        currentInterstitialAd = null
+                        loadNextInterstitial(activity)
+                        onClosed()
+                    }
 
-                override fun onAdShowedFullScreenContent() {
-                    Log.d(TAG, "Interstitial ad is now showing")
+                    override fun onAdShowedFullScreenContent() {
+                        Log.d(TAG, "Interstitial ad is now showing")
+                    }
                 }
+                ad.show(activity)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error showing interstitial: ${e.message}")
+                currentInterstitialAd = null
+                loadNextInterstitial(activity)
+                onClosed()
             }
-            ad.show(activity)
         } else {
             // Preload for next trigger and continue immediately
             loadNextInterstitial(activity)
@@ -241,7 +248,7 @@ fun AdBannerView(
             )
         }
 
-        // The AdView itself
+        // The AdView itself with key(currentAdUnit) to avoid IllegalStateException: The ad unit ID can only be set once on an AdView
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -266,38 +273,35 @@ fun AdBannerView(
                 }
             }
 
-            AndroidView(
-                modifier = Modifier.fillMaxWidth(),
-                factory = { context ->
-                    AdView(context).apply {
-                        setAdSize(AdSize.BANNER)
-                        adUnitId = currentAdUnit
-                        adListener = object : AdListener() {
-                            override fun onAdLoaded() {
-                                Log.d("CandyAdManager", "Banner ad loaded successfully from: $adUnitId")
-                                isLoaded = true
-                            }
+            key(currentAdUnit) {
+                AndroidView(
+                    modifier = Modifier.fillMaxWidth(),
+                    factory = { context ->
+                        AdView(context).apply {
+                            setAdSize(AdSize.BANNER)
+                            adUnitId = currentAdUnit
+                            adListener = object : AdListener() {
+                                override fun onAdLoaded() {
+                                    Log.d("CandyAdManager", "Banner ad loaded successfully from: $currentAdUnit")
+                                    isLoaded = true
+                                }
 
-                            override fun onAdFailedToLoad(error: LoadAdError) {
-                                Log.w("CandyAdManager", "Banner ad failed on $adUnitId: ${error.message} (Code: ${error.code})")
-                                if (currentAdUnit != AdManager.FALLBACK_BANNER_AD_UNIT_ID) {
-                                    // Fallback to sample banner to guarantee live ad display
-                                    currentAdUnit = AdManager.FALLBACK_BANNER_AD_UNIT_ID
-                                    adUnitId = AdManager.FALLBACK_BANNER_AD_UNIT_ID
-                                    loadAd(AdRequest.Builder().build())
+                                override fun onAdFailedToLoad(error: LoadAdError) {
+                                    Log.w("CandyAdManager", "Banner ad failed on $currentAdUnit: ${error.message} (Code: ${error.code})")
+                                    if (currentAdUnit != AdManager.FALLBACK_BANNER_AD_UNIT_ID) {
+                                        currentAdUnit = AdManager.FALLBACK_BANNER_AD_UNIT_ID
+                                    }
                                 }
                             }
+                            try {
+                                loadAd(AdRequest.Builder().build())
+                            } catch (e: Exception) {
+                                Log.e("CandyAdManager", "Error loading banner: ${e.message}")
+                            }
                         }
-                        loadAd(AdRequest.Builder().build())
                     }
-                },
-                update = { adView ->
-                    if (adView.adUnitId != currentAdUnit) {
-                        adView.adUnitId = currentAdUnit
-                        adView.loadAd(AdRequest.Builder().build())
-                    }
-                }
-            )
+                )
+            }
         }
     }
 }
