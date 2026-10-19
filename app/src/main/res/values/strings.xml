@@ -1,0 +1,23 @@
+<resources>
+    <string name="app_name">Candy Pop</string>
+    <string name="how_to_play">How to Play</string>
+    <string name="moves">MOVES</string>
+    <string name="score">Score</string>
+    <string name="play">PLAY</string>
+    <string name="back">Back</string>
+    <string name="cancel">Cancel</string>
+    <string name="next_level">NEXT LEVEL</string>
+    <string name="replay">Replay</string>
+    <string name="map">Map</string>
+    <string name="retry">Retry</string>
+    <string name="resume">RESUME</string>
+    <string name="game_paused">GAME PAUSED</string>
+    <string name="restart_level">Restart Level</string>
+    <string name="back_to_map">Back to Level Map</string>
+    <string name="sound">Sound</string>
+    <string name="vibration">Vibration</string>
+    <string name="sweet">SWEET!</string>
+    <string name="tasty">TASTY!</string>
+    <string name="delicious">DELICIOUS!</string>
+    <string name="sugar_crush">SUGAR CRUSH!</string>
+</resources>
